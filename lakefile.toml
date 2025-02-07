@@ -1,0 +1,10 @@
+name = "jax"
+version = "0.1.0"
+defaultTargets = ["jax"]
+
+[[lean_lib]]
+name = "Jax"
+
+[[lean_exe]]
+name = "jax"
+root = "Main"
