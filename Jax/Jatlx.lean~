@@ -1,0 +1,148 @@
+/- Layout of this File: -/
+/-
+  The user writes programs in a subset of the jaxpr language. Jaxpr expressions
+  are first preprocessed into ATL programs. Then ATL programs are normalized
+  into the SSA form. Operational semantics is defined for the SSA form of ATL.
+  After normalization, we just run the SSA form program based on the operational
+  semantics.
+
+  The file contains the following sections:
+  - Syntax of ATL in SSA form
+  - Functions for transforming jaxpr into ATL SSA form
+    (and jaxpr's syntax, which is just a few lines since
+     it's very similar to ATL)
+  - Operational semantics of ATL in SSA form
+    (including "built in" primitive functions for jaxpr implementd in ATL)
+-/
+
+/- modifications to jax: 
+   - no named arguments for primitive functions, only simple let bindings,
+     only one variable on lhs, one expression on right
+   - 
+-/
+/------------------------- Syntax of Core ATL -----------------------------------/
+def var := String
+def real := Nat
+inductive ind_exp :=
+| IVar : var → ind_exp
+| ISizeVar : var → ind_exp
+| IConst : real → ind_exp
+| IAdd : ind_exp → ind_exp → ind_exp
+| IMult : ind_exp → ind_exp → ind_exp 
+| ISub : ind_exp → ind_exp → ind_exp
+| IDiv : ind_exp → ind_exp → ind_exp 
+| ICeilDiv : ind_exp → ind_exp → ind_exp
+| IMod : ind_exp → ind_exp → ind_exp 
+inductive predicate :=
+| PTrue
+| PFalse
+| PEq : ind_exp → ind_exp → predicate
+| PLeq : ind_exp → ind_exp → predicate
+| PLe : ind_exp → ind_exp → predicatae
+| PAnd : predicate → predicate → predicate
+inductive scalar_exp :=
+| Sconst :  real -> scalar_exp
+| SVar : var -> scalar_exp
+| SAdd : scalar_exp -> scalar_exp -> scalar_exp
+| SMult : scalar_exp -> scalar_exp -> scalar_exp
+| SSub : scalar_exp -> scalar_exp -> scalar_exp
+| SDiv : scalar_exp -> scalar_exp -> scalar_exp
+| SPrimFun : List scalar_exp -> scalar_exp
+| SAccess : var -> List ind_exp -> scalar_exp
+inductive atl_exp :=
+| EScalar : scalar_exp -> atl_exp
+| ESum : var -> ind_exp -> ind_exp -> atl_exp -> atl_exp
+| EGen : var -> ind_exp -> ind_exp -> atl_exp -> atl_exp
+| EGuard : pred -> atl_exp -> atl_exp
+| ELet : var -> atl_exp -> atl_exp -> atl_exp
+/----------------ATL Syntax in Single-Static-Assignment Form---------------------/
+inductive stmtVar := stmtV : var → Nat → stmtVar
+inductive indVar := indV : var → indVar
+
+def indExpr := ind_exp
+
+def pred := predicate
+
+inductive stmtVarAccess :
+| stmtVA : stmtVar → List indVar → stmtVarAccess
+/- scalar expressions -/
+inductive expr := 
+| constExp : real → expr
+| binAdd : 
+  pred → stmtVarAccess → 
+  pred → stmtVarAccess → expr
+| scalarPrim : pred → prim →
+               List stmtVarAccess → expr /- vector operations can be implemented using this-/
+| binTensorSum : 
+  List indVar → List indVar → List indVar →
+  pred → stmtVarAccess → stmtVarAccess → expr
+| uniTensorSum :
+  List indVar → List indVar →
+  pred → stmtVarAccess → expr
+/- tensor expression -/
+inductive unitTenExpr := 
+| gen : List (int * var) * expr → unitTenExpr
+| varExpr : stmtVar → unitTenExpr
+inductive tenExpr
+| letList : List (stmtVar * unitTenExpr) * stmtVar → tenExpr
+/- functions taking tensors as input and returns a tensor, SSA without structs -/
+inductive tenFunc :=
+| func : List stmtVar -> tenExpr -> tenFunc
+
+/---------------- Jaxpr and Lowering it to ATL ---------------------/
+inductive jaxpr_body :=
+| jBody : List (stmtVar * var * List stmtVar) * stmtVar → jaxpr_body
+inductive jaxpr := 
+| jaxpr_prog : List stmtVar → jaxpr_body -> jaxpr
+
+/- assert primitive function well typed, so all free variables at top -/
+def subst stmts vars :=
+  match vars, stmts with
+  | [], _ → stmts
+  | _, [] → stmts
+  | (stmtV name suf) :: rstVars, 
+    (var, varExpr (stmtV name' suf')) :: rstStmts →
+    (var, varExpr (stmtV name suf)) :: 
+    subst rstStmts rstVars
+def inlinePrims stmts env varSuffix :=
+  match stmts with
+  | [] → []
+  | (targetVar, primName, argVars) :: rst →
+    match env primName with
+    | func inpVars (letList fstmts (stmtV outName outSuf)) →
+      subst (suffixUpdate fstmts) argVars ++
+      (targetVar, varExpr (stmtV outName varSuffix)) ::
+        inlinePrims rst env (1 + varSuffix)
+/- transform a jaxpr into an ATL, by inlining primitives from environment -/
+def bodyTrans env body :=
+  match body with
+  | jBody stmts outVar →
+    letList (inlinePrims stmts env 1) outVar
+def jaxToATL p env :=
+  match p with
+  | jaxpr_prog inpVars body → 
+    func inpVars (bodyTrans env body)
+/----------------ATL Semantics in Single-Static-Assignment Form---------------------/
+
+/-
+start from let bindings with calls to primitive functions on tensors
+we can replace primitive function f's call to argument variables x_1 to x_n by
+f's own definition, with its free variables replaced by x_1 to x_n
+
+then we get a program whose areguments are also programs. do the simplifications
+on let lifting etc, we get it in the desired form
+
+thus Jax is syntactic sugar for a subset of ATL, and this subset of ATL can
+then be transformed into SSA
+
+The abstract machine takes a jax program as input, first do transformation,
+then use ATL's semantics to evaluate. This syntactic sugar is part of the
+language so it doesn't need proof. Although in principle we want to prove
+the algorithms implemented this way and see if they are correct
+-/
+
+inductive jaxpr :=
+
+| cond : List jaxpr → prim_expr
+| while jaxpr → jaxpr → prim_expr 
+| scan
