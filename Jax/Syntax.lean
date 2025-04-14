@@ -3,6 +3,25 @@ def var := String
 def real := Nat
 def k := Nat
 def ind := Nat
+/------------------------- Syntax of Core ATL -----------------------------------/
+
+/-
+inductive scalar_exp :=
+| Sconst :  real -> scalar_exp
+| SVar : var -> scalar_exp
+| SAdd : scalar_exp -> scalar_exp -> scalar_exp
+| SMult : scalar_exp -> scalar_exp -> scalar_exp
+| SSub : scalar_exp -> scalar_exp -> scalar_exp
+| SDiv : scalar_exp -> scalar_exp -> scalar_exp
+| SPrimFun : List scalar_exp -> scalar_exp
+| SAccess : var -> List ind_exp -> scalar_exp
+inductive atl_exp :=
+| EScalar : scalar_exp -> atl_exp
+| ESum : var -> ind_exp -> ind_exp -> atl_exp -> atl_exp
+| EGen : var -> ind_exp -> ind_exp -> atl_exp -> atl_exp
+| EGuard : pred -> atl_exp -> atl_exp
+| ELet : var -> atl_exp -> atl_exp -> atl_exp 
+-/
 inductive ind_exp :=
 | Ivar : var -> ind_exp
 | Inat : ind -> ind_exp
